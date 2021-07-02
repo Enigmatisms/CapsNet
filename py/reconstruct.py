@@ -4,8 +4,11 @@
     Reconstruction pathway. Somehow confused
     Reconstruction resembles to GAN, which trains two models
     Therefore I suppose the training of reconstruction takes place in a lower frequency
+    @date 2021.6.30
+    @author Qianyue He
 """
 
+import torch
 from torch import nn
 
 class Recons(nn.Module):
@@ -26,5 +29,6 @@ class Recons(nn.Module):
         I hope it will be (n, 10)
     """
     def forward(self, x, y):
-        masked = x[y > 0.5]         # output is (n, 16)
+        bsz = x.shape[0]
+        masked = x[torch.arange(bsz), y, :]         # output is (n, 16)
         return self.linear(masked)

@@ -2,19 +2,23 @@
     Dynamic Routing Between Capsules
     Personal Implementation. Created on 2021/6/30
     Capsule pathway
+    @date 2021.6.30
+    @author Qianyue He
 """
 
 import torch
 from torch import nn
 
-def makeConv(in_chan, out_chan, ksz, stride = 1, pad = 0):
-    return nn.Sequential(
-                nn.Conv2d(256, 32, kernel_size = 9, stride = 2),
-                nn.BatchNorm2d(32),
-                nn.ReLU(True)
-            )
 
 class CapsNet(nn.Module):
+    @staticmethod
+    def makeConv(in_chan, out_chan, ksz, stride = 1, pad = 0):
+        return nn.Sequential(
+            nn.Conv2d(in_chan, out_chan, kernel_size = ksz, stride = stride, padding = pad),
+            nn.BatchNorm2d(32),
+            nn.ReLU(True)
+        )
+
     def __init__(self, num_iter = 5, batch_size = 50):
         super().__init__()
         self.input_conv = nn.Sequential(
@@ -22,18 +26,22 @@ class CapsNet(nn.Module):
             nn.BatchNorm2d(256),
             nn.ReLU(True)
         )
-        self.vector_conv = [makeConv(256, 32, 9) for _ in range(8)]
+        self.vector_conv = [CapsNet.makeConv(256, 32, 9, stride = 2) for _ in range(8)]
         self.num_primary_caps = 32 * 6 * 6
         self.num_iter = num_iter                        # number of dynamic routing iteration
         self.batch_size = batch_size
         # set transformation matrix W
-        self.W = nn.parameter(torch.normal(0, 1, (10, self.num_primary_caps, 8, 16)))
+        self.W = nn.Parameter(torch.normal(0, 1, (10, self.num_primary_caps, 8, 16)))
+
+    def setCuda(self):
+        for i in range(len(self.vector_conv)):
+            self.vector_conv[i] = self.vector_conv[i].cuda()
 
     # Conv1 to Primary Caps, making (n, 32, 6, 6, 8) inputs
     def vectorConv(self, x):
-        y = self.vector_conv[0](x)
+        y = self.vector_conv[0](x).unsqueeze(dim = -1)
         for i in range(1, 8):
-            y = torch.cat([y, self.vector_conv[i](x)], dim = -1)
+            y = torch.cat([y, self.vector_conv[i](x).unsqueeze(dim = -1)], dim = -1)
         return y
 
     """
@@ -42,17 +50,17 @@ class CapsNet(nn.Module):
         therefore is (n, 10, 32, 6, 6, 8)
     """
     def dynamicRouting(self, x):
-        B = torch.zeros((10, 1, self.num_primary_caps))
-        x = x.view(self.batch_size, 10, -1, 1, 8)              # dimensionality compression
+        B = torch.zeros((self.batch_size, 10, 1, self.num_primary_caps)).cuda()
+        x = x.view(self.batch_size, -1, 1, 8)              # dimensionality compression
         v = torch.zeros(self.batch_size, 10, self.num_primary_caps)
         for _ in range(self.num_iter):
-            u_hat = self.W[None, :, :, None, :] @ x
+            u_hat = x[:, None, :, :, :] @ self.W[None, :, :, :, :]
             u_hat = u_hat.squeeze()                             # to (n, 10, 32 * 6 * 6, 16)
             C = torch.softmax(B, dim = 1)
-            s = (C @ u_hat).squeeze()
-            v = CapsNet.squash(s)                               # (v is n, 10, 32 * 6 * 6)
+            s = (C @ u_hat).squeeze()                           # C is (10, 1, 32 * 6 * 6)
+            v = CapsNet.squash(s)                               # (v is n, 10, 16)
             delta_b = (u_hat @ v.unsqueeze(dim = -1)).squeeze()
-            B += delta_b.unsqueeze(dim = 1)
+            B += delta_b.unsqueeze(dim = 2)
         return v
     """
         squash: non-linear transformation as activation
@@ -65,5 +73,5 @@ class CapsNet(nn.Module):
 
     def forward(self, x):
         x = self.input_conv(x)
-        x = self.vector_conv(x)         # input for primary caps
+        x = self.vectorConv(x)         # input for primary caps
         return self.dynamicRouting(x)
