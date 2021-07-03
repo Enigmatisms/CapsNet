@@ -8,6 +8,8 @@
 
 import torch
 from torch import nn
+from torch.functional import norm
+import torch.nn.functional as F
 
 class MarginLoss(nn.Module):
     def __init__(self, mp = 0.9, mm = 0.1, _lambda = 0.5):
@@ -22,9 +24,24 @@ class MarginLoss(nn.Module):
         This Margin loss is for single digit only
     """
     def forward(self, x, y):
+        bsz = x.shape[0]
+        masked = torch.zeros(bsz, 10)
+        masked[torch.arange(bsz), y] = 1.0
+        true_caps = x[masked > 0.5]
+        false_caps = x[masked <= 0.5]
+        true_norm = self.mp - true_caps.norm()
+        false_norm = false_caps.norm() - self.mm
+
         loss = 0.
-        x = torch.norm(x, dim = 1)
-        loss += torch.max(self.mp - x[y > 0.5], 0) ** 2
-        loss += self._lambda * torch.max(x[y <= 0.5] - self.mm, 0) ** 2
+        loss = loss + true_norm.norm() ** 2
+        loss = loss + self._lambda * false_norm.norm() ** 2
         return loss
+
+    @staticmethod
+    def accCounter(pred:torch.FloatTensor, truth:torch.Tensor):
+        norms = torch.norm(pred.detach(), dim = -1)
+        _, idx = norms.max(dim = 1)
+        rights = torch.sum(idx == truth)
+        return rights.item()
+
     

@@ -16,9 +16,9 @@ class Recons(nn.Module):
         super().__init__()
         self.linear = nn.Sequential(
             nn.Linear(16, 512),
-            nn.ReLU(True),
+            nn.ReLU(),
             nn.Linear(512, 1024),
-            nn.ReLU(True),
+            nn.ReLU(),
             nn.Linear(1024, 784),
             nn.Sigmoid()
         )

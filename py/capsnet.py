@@ -8,6 +8,8 @@
 
 import torch
 from torch import nn
+from torch.nn import functional as F
+from torch.autograd import Variable as Var
 
 
 class CapsNet(nn.Module):
@@ -50,18 +52,20 @@ class CapsNet(nn.Module):
         therefore is (n, 10, 32, 6, 6, 8)
     """
     def dynamicRouting(self, x):
-        B = torch.zeros((self.batch_size, 10, 1, self.num_primary_caps)).cuda()
+        Bs = Var(torch.zeros((self.batch_size, 10, 1, self.num_primary_caps))).cuda()
         x = x.view(self.batch_size, -1, 1, 8)              # dimensionality compression
-        v = torch.zeros(self.batch_size, 10, self.num_primary_caps)
-        for _ in range(self.num_iter):
-            u_hat = x[:, None, :, :, :] @ self.W[None, :, :, :, :]
-            u_hat = u_hat.squeeze()                             # to (n, 10, 32 * 6 * 6, 16)
-            C = torch.softmax(B, dim = 1)
-            s = (C @ u_hat).squeeze()                           # C is (10, 1, 32 * 6 * 6)
+        u_hat = x[:, None, :, :, :] @ self.W[None, :, :, :, :]
+        u_hat = u_hat.squeeze()                             # to (n, 10, 32 * 6 * 6, 16)
+        for _ in range(self.num_iter - 1):
+            Cs = F.softmax(Bs, dim = 1)
+            s = (Cs @ u_hat).squeeze()                           # C is (10, 1, 32 * 6 * 6)
             v = CapsNet.squash(s)                               # (v is n, 10, 16)
             delta_b = (u_hat @ v.unsqueeze(dim = -1)).squeeze()
-            B += delta_b.unsqueeze(dim = 2)
-        return v
+            Bs = Bs + delta_b.unsqueeze(dim = 2)
+        Cs = torch.softmax(Bs, dim = 1)
+        s = (Cs @ u_hat).squeeze()                           
+        return CapsNet.squash(s)
+
     """
         squash: non-linear transformation as activation
         - input has shape (n, 10, num_primary_caps)
