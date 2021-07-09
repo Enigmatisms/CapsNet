@@ -33,8 +33,8 @@ class MarginLoss(nn.Module):
         false_norm = false_caps.norm() - self.mm
 
         loss = 0.
-        loss = loss + true_norm.norm() ** 2
-        loss = loss + self._lambda * false_norm.norm() ** 2
+        loss = loss + torch.sum(true_norm ** 2)
+        loss = loss + self._lambda * torch.sum(false_norm ** 2)
         return loss
 
     @staticmethod

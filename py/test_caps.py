@@ -31,7 +31,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type = int, default = 20, help = "Batch size")
     parser.add_argument("--routing_iter", type = int, default = 5, help = "Dynamic routing iteration number")
     parser.add_argument("--save_time", type = int, default = 50, help = "Save generated img every <> batches")
-    parser.add_argument("--gamma", type = float, default = 0.9996, help = "Exponential lr coefficient")
+    parser.add_argument("--gamma", type = float, default = 0.9995, help = "Exponential lr coefficient")
     parser.add_argument("--recons_ratio", type = float, default = 0.005, help = "The ratio of reconstruction error")
     parser.add_argument("-d", "--del_dir", action = "store_true", help = "Delete dir ./logs and start new tensorboard records")
     parser.add_argument("-c", "--cuda", default = False, action = "store_true", help = "Use CUDA to speed up training")
@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     cap = CapsNet(args.routing_iter, args.batch_size)
     recons = Recons()
-    margin_loss_func = MarginLoss(0.999, 0.001)
+    margin_loss_func = MarginLoss(1.0, 0.0)
     recons_loss_func = nn.MSELoss()
 
     tf = transforms.ToTensor()
@@ -85,8 +85,9 @@ if __name__ == "__main__":
     writer = SummaryWriter(log_dir = logdir+time_stamp)
     batch_number = data_set.__len__()
 
-    cap_opt = optim.Adam(cap.parameters(), lr = 3e-2)
-    recon_opt = optim.Adam(recons.parameters(), lr = 1e-2)
+    cap_opt = optim.Adam(cap.parameters(), lr = 1e-3)
+    print(cap.parameters())
+    recon_opt = optim.Adam(recons.parameters(), lr = 1e-3)
     cap_sch = optim.lr_scheduler.ExponentialLR(cap_opt, gamma = gamma)
     recon_sch = optim.lr_scheduler.ExponentialLR(recon_opt, gamma = gamma)
     torch.autograd.set_detect_anomaly(True)
@@ -114,24 +115,27 @@ if __name__ == "__main__":
             recons_img = recons(y_cap, by)
             loss = margin_loss + ratio * recons_loss_func(recons_img, bx.view(batch_size, -1))
             loss.backward()
+            
             cap_opt.step()
             cap_sch.step()
 
             train_cnt = i * batch_number + k
             img_cnt += batch_size
-            acc_cnt += MarginLoss.accCounter(y_cap, by)
+            local_cnt = MarginLoss.accCounter(y_cap, by)
+            acc_cnt += local_cnt
             acc = acc_cnt / img_cnt
             writer.add_scalar('Loss/Total Loss', loss, train_cnt)
             writer.add_scalar('Loss/Reconstruction loss', recons_loss, train_cnt)
             writer.add_scalar('Loss/Capsule loss', margin_loss, train_cnt)
             writer.add_scalar('Acc/Prediction Accuracy', acc, train_cnt)
-            print("Batch %4d / %4d\t recons loss: %.4f\t total loss: %.4f\t acc: %.4f"%(
-                k, batch_number, recons_loss.item(), loss.item(), acc
+            print("Batch %4d / %4d\t recons loss: %.4f\t total loss: %.4f\t acc: %.4f\t local acc: %.4f\t lr: %.4lf"%(
+                k, batch_number, recons_loss.item(), loss.item(), acc, local_cnt / batch_size, cap_sch.get_last_lr()[-1]
             ))
 
             if k % save_time == 0:
                 img_to_save = recons_img.detach().view(batch_size, 1, 28, 28)
                 save_image(img_to_save[:25], "..\\imgs\\G_%d.jpg"%(k + 1), nrow = 5, normalize = True)
+            # break
     writer.close()
     print("Output completed.")
     

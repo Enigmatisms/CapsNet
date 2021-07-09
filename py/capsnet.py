@@ -13,22 +13,13 @@ from torch.autograd import Variable as Var
 
 
 class CapsNet(nn.Module):
-    @staticmethod
-    def makeConv(in_chan, out_chan, ksz, stride = 1, pad = 0):
-        return nn.Sequential(
-            nn.Conv2d(in_chan, out_chan, kernel_size = ksz, stride = stride, padding = pad),
-            nn.BatchNorm2d(32),
-            nn.ReLU(True)
-        )
-
     def __init__(self, num_iter = 5, batch_size = 50):
         super().__init__()
         self.input_conv = nn.Sequential(
             nn.Conv2d(1, 256, kernel_size = 9, stride = 1),
-            nn.BatchNorm2d(256),
             nn.ReLU(True)
         )
-        self.vector_conv = [CapsNet.makeConv(256, 32, 9, stride = 2) for _ in range(8)]
+        self.vector_conv = nn.ModuleList([nn.Conv2d(256, 32, 9, stride = 2) for _ in range(8)])
         self.num_primary_caps = 32 * 6 * 6
         self.num_iter = num_iter                        # number of dynamic routing iteration
         self.batch_size = batch_size
@@ -58,7 +49,7 @@ class CapsNet(nn.Module):
         u_hat = u_hat.squeeze()                             # to (n, 10, 32 * 6 * 6, 16)
         for _ in range(self.num_iter - 1):
             Cs = F.softmax(Bs, dim = 1)
-            s = (Cs @ u_hat).squeeze()                           # C is (10, 1, 32 * 6 * 6)
+            s = (Cs @ u_hat).squeeze()                           # C is (n, 10, 1, 32 * 6 * 6)
             v = CapsNet.squash(s)                               # (v is n, 10, 16)
             delta_b = (u_hat @ v.unsqueeze(dim = -1)).squeeze()
             Bs = Bs + delta_b.unsqueeze(dim = 2)
@@ -72,10 +63,12 @@ class CapsNet(nn.Module):
     """
     @staticmethod
     def squash(x):
-        n = torch.norm(x, dim = -1, keepdim = True)     # shape: (n, 10, 1)
-        return n / (n ** 2 + 1.0) * x
+        n = torch.sum(x ** 2, dim = -1, keepdim = True)
+        sqrt_n = torch.sqrt(n)
+        return n / (n + 1.0) * x / sqrt_n
 
     def forward(self, x):
         x = self.input_conv(x)
         x = self.vectorConv(x)         # input for primary caps
+        x = CapsNet.squash(x)
         return self.dynamicRouting(x)
