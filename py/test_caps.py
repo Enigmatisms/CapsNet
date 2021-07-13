@@ -104,65 +104,65 @@ if __name__ == "__main__":
     acc_cnt = 0
     test_cnt = 0
     cap.eval()
-    with torch.no_grad():
-        for j, (bx, by) in enumerate(test_set):
-            bx = bx.cuda()
-            by = by.cuda()
-            out, _ = cap(bx, by)
-            confmat.addRawElement(by, out)
-    # for i in range(epochs):
-    #     for k, (bx, by) in enumerate(data_set):
-    #         cap_opt.zero_grad()
+    # with torch.no_grad():
+    #     for j, (bx, by) in enumerate(test_set):
+    #         bx = bx.cuda()
+    #         by = by.cuda()
+    #         out, _ = cap(bx, by)
+    #         confmat.addRawElement(by, out)
+    for i in range(epochs):
+        for k, (bx, by) in enumerate(data_set):
+            cap_opt.zero_grad()
 
-    #         bx = Var(bx).cuda()
-    #         by = Var(by).cuda()
-    #         y_caps, reconstructs = cap(bx, by)
-    #         margin_loss = margin_loss_func(y_caps, by) 
-    #         recon_loss = recons_loss_func(reconstructs, bx.view(batch_size, -1))
-    #         loss = margin_loss + ratio * recon_loss
-    #         loss.backward()
+            bx = Var(bx).cuda()
+            by = Var(by).cuda()
+            y_caps, reconstructs = cap(bx, by)
+            margin_loss = margin_loss_func(y_caps, by) 
+            recon_loss = recons_loss_func(reconstructs, bx.view(batch_size, -1))
+            loss = margin_loss + ratio * recon_loss
+            loss.backward()
             
-    #         cap_opt.step()
-    #         cap_sch.step()
+            cap_opt.step()
+            cap_sch.step()
 
-    #         train_cnt = i * batch_number + k
-    #         local_acc = MarginLoss.accCounter(y_caps, by) / batch_size
-    #         acc = (local_acc + old_acc) / 2
-    #         old_acc = local_acc
-    #         writer.add_scalar('Loss/Total Loss', loss, train_cnt)
-    #         writer.add_scalar('Loss/Reconstruction loss', recon_loss, train_cnt)
-    #         writer.add_scalar('Loss/Capsule loss', margin_loss, train_cnt)
-    #         writer.add_scalar('Acc/Train Set Accuracy', acc, train_cnt)
+            train_cnt = i * batch_number + k
+            local_acc = MarginLoss.accCounter(y_caps, by) / batch_size
+            acc = (local_acc + old_acc) / 2
+            old_acc = local_acc
+            writer.add_scalar('Loss/Total Loss', loss, train_cnt)
+            writer.add_scalar('Loss/Reconstruction loss', recon_loss, train_cnt)
+            writer.add_scalar('Loss/Capsule loss', margin_loss, train_cnt)
+            writer.add_scalar('Acc/Train Set Accuracy', acc, train_cnt)
 
-    #         if k % test_time == 0:
-    #             cap.eval()
-    #             eval_cnt = 0
-    #             eval_total = len(test_set)
-    #             with torch.no_grad():
-    #                 for j, (bx, by) in enumerate(test_set):
-    #                     bx = bx.cuda()
-    #                     by = by.cuda()
-    #                     out, _ = cap(bx, by)
-    #                     eval_cnt += MarginLoss.accCounter(out, by)
-    #                     if j >= 9: break
-    #                     confmat.addRawElement(by, out)
-    #                 test_acc = eval_cnt / (10.0 * batch_size)
-    #             test_cnt += 1
-    #             writer.add_scalar('Acc/Test Set Accuracy', test_acc, test_cnt)
-    #             print("Epoch: %3d / %3d\t Batch %4d / %4d\t recons loss: %.4f\t total loss: %.4f\t acc: %.4f\t test acc: %.4f\t lr: %.4lf"%(
-    #                 i, epochs, k, batch_number, recon_loss.item(), loss.item(), acc, test_acc, cap_sch.get_last_lr()[-1]
-    #             ))
-    #             cap.train()
-    #         if k % save_time == 0:
-    #             img_to_save = reconstructs.detach().view(batch_size, 1, 28, 28)
-    #             save_image(img_to_save[:25], "..\\imgs\\G_%d.jpg"%(k + 1), nrow = 5, normalize = True)
-    #         # break
-    # writer.close()
-    # torch.save({
-    #     'model': cap.state_dict(),
-    #     'optimizer': cap_opt.state_dict()},
-    #     path
-    # )
+            if k % test_time == 0:
+                cap.eval()
+                eval_cnt = 0
+                eval_total = len(test_set)
+                with torch.no_grad():
+                    for j, (bx, by) in enumerate(test_set):
+                        bx = bx.cuda()
+                        by = by.cuda()
+                        out, _ = cap(bx, by)
+                        eval_cnt += MarginLoss.accCounter(out, by)
+                        if j >= 9: break
+                        confmat.addRawElement(by, out)
+                    test_acc = eval_cnt / (10.0 * batch_size)
+                test_cnt += 1
+                writer.add_scalar('Acc/Test Set Accuracy', test_acc, test_cnt)
+                print("Epoch: %3d / %3d\t Batch %4d / %4d\t recons loss: %.4f\t total loss: %.4f\t acc: %.4f\t test acc: %.4f\t lr: %.4lf"%(
+                    i, epochs, k, batch_number, recon_loss.item(), loss.item(), acc, test_acc, cap_sch.get_last_lr()[-1]
+                ))
+                cap.train()
+            if k % save_time == 0:
+                img_to_save = reconstructs.detach().view(batch_size, 1, 28, 28)
+                save_image(img_to_save[:25], "..\\imgs\\G_%d.jpg"%(k + 1), nrow = 5, normalize = True)
+            # break
+    writer.close()
+    torch.save({
+        'model': cap.state_dict(),
+        'optimizer': cap_opt.state_dict()},
+        path
+    )
     confmat.saveConfusionMatrix("..\\confusion.png")
     print("Output completed.")
     
