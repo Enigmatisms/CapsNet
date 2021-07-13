@@ -1,6 +1,8 @@
-*.png
+*/*.png
 
 imgs/
 .vscode/
 logs/
 __pycache__/
+
+!asset/*.png

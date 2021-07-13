@@ -40,10 +40,8 @@ class CapsNet(nn.Module):
 
     # Conv1 to Primary Caps, making (n, 32, 6, 6, 8) inputs
     def vectorConv(self, x):
-        y = self.vector_conv[0](x).unsqueeze(dim = -1)
-        for i in range(1, 8):
-            y = torch.cat([y, self.vector_conv[i](x).unsqueeze(dim = -1)], dim = -1)
-        return y
+        y = [self.vector_conv[i](x).unsqueeze(dim = -1) for i in range(8)]
+        return torch.cat(y, dim = -1)
 
     """
         implementation of dynamic routing algorithm
@@ -56,8 +54,8 @@ class CapsNet(nn.Module):
         u_hat = x[:, None, :, :, :] @ self.W[None, :, :, :, :]
         u_hat = u_hat.squeeze()                             # to (n, 10, 32 * 6 * 6, 16)
         for _ in range(self.num_iter - 1):
-            Cs = F.softmax(Bs, dim = 1)
-            s = (Cs * u_hat).sum(dim = 2)                       # C is (n, 10, 1, 32 * 6 * 6)
+            Cs = F.softmax(Bs, dim = 2)
+            s = (Cs * u_hat).sum(dim = 2)                       # C is (n, 10, 32 * 6 * 6, 1)
             v = CapsNet.squash(s)                               # (v is n, 10, 16)
             delta_b = (v[:, :, None, :] * u_hat).sum(dim = -1)
             Bs = Bs + delta_b.unsqueeze(dim = -1)

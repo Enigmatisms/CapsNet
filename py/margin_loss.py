@@ -43,5 +43,3 @@ class MarginLoss(nn.Module):
         _, idx = norms.max(dim = 1)
         rights = torch.sum(idx == truth)
         return rights.item()
-
-    
