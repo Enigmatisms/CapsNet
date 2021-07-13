@@ -29,8 +29,8 @@ class MarginLoss(nn.Module):
         masked[torch.arange(bsz), y] = 1.0
         true_caps = x[masked > 0.5]
         false_caps = x[masked <= 0.5]
-        true_norm = self.mp - true_caps.norm()
-        false_norm = false_caps.norm() - self.mm
+        true_norm = F.relu(self.mp - true_caps.norm(), True)
+        false_norm = F.relu(false_caps.norm() - self.mm, True)
 
         loss = 0.
         loss = loss + torch.sum(true_norm ** 2)

@@ -25,6 +25,14 @@ class CapsNet(nn.Module):
         self.batch_size = batch_size
         # set transformation matrix W
         self.W = nn.Parameter(torch.normal(0, 1, (10, self.num_primary_caps, 8, 16)))
+        self.linear = nn.Sequential(
+            nn.Linear(160, 512),
+            nn.ReLU(True),
+            nn.Linear(512, 1024),
+            nn.ReLU(True),
+            nn.Linear(1024, 784),
+            nn.Sigmoid()
+        )
 
     def setCuda(self):
         for i in range(len(self.vector_conv)):
@@ -43,18 +51,18 @@ class CapsNet(nn.Module):
         therefore is (n, 10, 32, 6, 6, 8)
     """
     def dynamicRouting(self, x):
-        Bs = Var(torch.zeros((self.batch_size, 10, 1, self.num_primary_caps))).cuda()
+        Bs = Var(torch.zeros((self.batch_size, 10, self.num_primary_caps, 1))).cuda()
         x = x.view(self.batch_size, -1, 1, 8)              # dimensionality compression
         u_hat = x[:, None, :, :, :] @ self.W[None, :, :, :, :]
         u_hat = u_hat.squeeze()                             # to (n, 10, 32 * 6 * 6, 16)
         for _ in range(self.num_iter - 1):
             Cs = F.softmax(Bs, dim = 1)
-            s = (Cs @ u_hat).squeeze()                           # C is (n, 10, 1, 32 * 6 * 6)
+            s = (Cs * u_hat).sum(dim = 2)                       # C is (n, 10, 1, 32 * 6 * 6)
             v = CapsNet.squash(s)                               # (v is n, 10, 16)
-            delta_b = (u_hat @ v.unsqueeze(dim = -1)).squeeze()
-            Bs = Bs + delta_b.unsqueeze(dim = 2)
+            delta_b = (v[:, :, None, :] * u_hat).sum(dim = -1)
+            Bs = Bs + delta_b.unsqueeze(dim = -1)
         Cs = torch.softmax(Bs, dim = 1)
-        s = (Cs @ u_hat).squeeze()                           
+        s = (Cs * u_hat).sum(dim = 2)                          
         return CapsNet.squash(s)
 
     """
@@ -67,8 +75,16 @@ class CapsNet(nn.Module):
         sqrt_n = torch.sqrt(n)
         return n / (n + 1.0) * x / sqrt_n
 
-    def forward(self, x):
+    def reconstruct(self, x, y):
+        bsz = x.shape[0]
+        mask = Var(torch.zeros(bsz, 10)).cuda()
+        mask[torch.arange(bsz), y] = 1.0         # output is (n, 16)
+        masked = x * mask[:, :, None]
+        return self.linear(masked.view(bsz, -1))
+
+    def forward(self, x, y):
         x = self.input_conv(x)
         x = self.vectorConv(x)         # input for primary caps
         x = CapsNet.squash(x)
-        return self.dynamicRouting(x)
+        x = self.dynamicRouting(x)
+        return x, self.reconstruct(x, y)

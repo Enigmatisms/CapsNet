@@ -22,17 +22,16 @@ from torch.utils.tensorboard import SummaryWriter
 
 from capsnet import CapsNet
 from margin_loss import MarginLoss
-from reconstruct import Recons
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--epoches", type = int, default = 40, help = "Training lasts for . epoches")
+    parser.add_argument("--epoches", type = int, default = 4, help = "Training lasts for . epoches")
     parser.add_argument("--batch_size", type = int, default = 20, help = "Batch size")
-    parser.add_argument("--routing_iter", type = int, default = 5, help = "Dynamic routing iteration number")
+    parser.add_argument("--routing_iter", type = int, default = 3, help = "Dynamic routing iteration number")
     parser.add_argument("--save_time", type = int, default = 50, help = "Save generated img every <> batches")
-    parser.add_argument("--gamma", type = float, default = 0.9995, help = "Exponential lr coefficient")
-    parser.add_argument("--recons_ratio", type = float, default = 0.005, help = "The ratio of reconstruction error")
+    parser.add_argument("--gamma", type = float, default = 0.9999, help = "Exponential lr coefficient")
+    parser.add_argument("--recons_ratio", type = float, default = 0.0005, help = "The ratio of reconstruction error")
     parser.add_argument("-d", "--del_dir", action = "store_true", help = "Delete dir ./logs and start new tensorboard records")
     parser.add_argument("-c", "--cuda", default = False, action = "store_true", help = "Use CUDA to speed up training")
     parser.add_argument("-t", "--test", default = False, action = "store_true", help = "Run test with trained model")
@@ -48,9 +47,8 @@ if __name__ == "__main__":
     ratio       = args.recons_ratio
 
     cap = CapsNet(args.routing_iter, args.batch_size)
-    recons = Recons()
-    margin_loss_func = MarginLoss(1.0, 0.0)
-    recons_loss_func = nn.MSELoss()
+    margin_loss_func = MarginLoss(0.9, 0.1)
+    recons_loss_func = nn.MSELoss(size_average = False)
 
     tf = transforms.ToTensor()
     data_set = DataLoader(
@@ -68,13 +66,11 @@ if __name__ == "__main__":
         print("Using CUDA.")
         cap = cap.cuda()
         cap.setCuda()
-        recons = recons.cuda()
         margin_loss_func = margin_loss_func.cuda()
         recons_loss_func = recons_loss_func.cuda()
     else:
         print("CUDA not available.")
         cap = cap.cpu()
-        recons = recons.cpu()
         margin_loss_func = margin_loss_func.cpu()
         recons_loss_func = recons_loss_func.cpu()
     
@@ -86,34 +82,20 @@ if __name__ == "__main__":
     batch_number = data_set.__len__()
 
     cap_opt = optim.Adam(cap.parameters(), lr = 1e-3)
-    print(cap.parameters())
-    recon_opt = optim.Adam(recons.parameters(), lr = 1e-3)
     cap_sch = optim.lr_scheduler.ExponentialLR(cap_opt, gamma = gamma)
-    recon_sch = optim.lr_scheduler.ExponentialLR(recon_opt, gamma = gamma)
     torch.autograd.set_detect_anomaly(True)
     acc_cnt = 0
     img_cnt = 0
     for i in range(epoches):
         for k, (bx, by) in enumerate(data_set):
             cap_opt.zero_grad()
-            recon_opt.zero_grad()
 
             bx = Var(bx).cuda()
-            by = by.cuda()
-            y_cap = cap(bx)
-            # ======= reconstruction loss ======
-            recons_img = recons(y_cap, by)
-            recons_loss = recons_loss_func(recons_img, bx.view(batch_size, -1))
-            recons_loss.backward()
-            recon_opt.step()
-            recon_sch.step()
-
-            # ======= margin loss ======
-            bx = Var(bx).cuda()
-            y_cap = cap(bx)
-            margin_loss = margin_loss_func(y_cap, by) 
-            recons_img = recons(y_cap, by)
-            loss = margin_loss + ratio * recons_loss_func(recons_img, bx.view(batch_size, -1))
+            by = Var(by).cuda()
+            y_caps, reconstructs = cap(bx, by)
+            margin_loss = margin_loss_func(y_caps, by) 
+            recon_loss = recons_loss_func(reconstructs, bx.view(batch_size, -1))
+            loss = margin_loss + ratio * recon_loss
             loss.backward()
             
             cap_opt.step()
@@ -121,19 +103,19 @@ if __name__ == "__main__":
 
             train_cnt = i * batch_number + k
             img_cnt += batch_size
-            local_cnt = MarginLoss.accCounter(y_cap, by)
+            local_cnt = MarginLoss.accCounter(y_caps, by)
             acc_cnt += local_cnt
             acc = acc_cnt / img_cnt
             writer.add_scalar('Loss/Total Loss', loss, train_cnt)
-            writer.add_scalar('Loss/Reconstruction loss', recons_loss, train_cnt)
+            writer.add_scalar('Loss/Reconstruction loss', recon_loss, train_cnt)
             writer.add_scalar('Loss/Capsule loss', margin_loss, train_cnt)
             writer.add_scalar('Acc/Prediction Accuracy', acc, train_cnt)
             print("Batch %4d / %4d\t recons loss: %.4f\t total loss: %.4f\t acc: %.4f\t local acc: %.4f\t lr: %.4lf"%(
-                k, batch_number, recons_loss.item(), loss.item(), acc, local_cnt / batch_size, cap_sch.get_last_lr()[-1]
+                k, batch_number, recon_loss.item(), loss.item(), acc, local_cnt / batch_size, cap_sch.get_last_lr()[-1]
             ))
 
             if k % save_time == 0:
-                img_to_save = recons_img.detach().view(batch_size, 1, 28, 28)
+                img_to_save = reconstructs.detach().view(batch_size, 1, 28, 28)
                 save_image(img_to_save[:25], "..\\imgs\\G_%d.jpg"%(k + 1), nrow = 5, normalize = True)
             # break
     writer.close()
